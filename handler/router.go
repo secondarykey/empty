@@ -33,7 +33,7 @@ func NewRouter(b Behavior) Router {
 
 type Handler func(*Parameter) error
 
-func (router *Router) Add(key string, h Handler) {
+func (router *Router) Add(key string, h Handler) error {
 	if router.pattern == nil {
 		router.pattern = make(map[string]Handler)
 		router.keyMap = make(map[string][]string)
@@ -43,11 +43,13 @@ func (router *Router) Add(key string, h Handler) {
 	slc := strings.Split(key, "/")
 	for _, elm := range slc {
 		if strings.Index(elm, "{") == 0 &&
+			//TODO Error
 			strings.Index(elm, "}") == len(elm)-1 {
 			router.keyMap[key] = slc
 			break
 		}
 	}
+	return nil
 }
 
 func (router *Router) getHandler(p *Parameter) (Handler, error) {
@@ -84,9 +86,11 @@ func (router *Router) getHandler(p *Parameter) (Handler, error) {
 		}
 
 		if flag {
-			p.values = make(map[string]string)
-			for key, val := range wkMap {
-				p.values[key] = val
+			if len(wkMap) != 0 {
+				p.values = make(map[string]string)
+				for key, val := range wkMap {
+					p.values[key] = val
+				}
 			}
 			return router.pattern[key], nil
 		}
@@ -98,14 +102,14 @@ func (router *Router) getHandler(p *Parameter) (Handler, error) {
 func (router Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	p := NewParameter(w, r)
-	if r.behavior == Direct {
+	if router.behavior == Direct {
 		p.Direct = true
 	}
 
 	handler, err := router.getHandler(p)
 	if err != nil {
 		log.Println(err)
-		//error handring
+		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
@@ -118,7 +122,7 @@ func (router Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if !p.Direct {
 		if router.behavior == Template {
-			if p.templates == nil || len(p.templates) {
+			if p.templates == nil || len(p.templates) == 0 {
 				err = fmt.Errorf("Behavior->Template but templates not setting")
 			} else {
 				err = setTemplates(w, p.output, p.templates...)
@@ -171,15 +175,11 @@ func (p *Parameter) Set(key string, v interface{}) {
 	p.output[key] = v
 }
 
-func (p *Parameter) Get(key string) *string {
+func (p *Parameter) Get(key string) string {
 	if p.values == nil {
-		return nil
+		return ""
 	}
-	val, ok := p.values[key]
-	if !ok {
-		return nil
-	}
-	return &val
+	return p.values[key]
 }
 
 func setJSON(w http.ResponseWriter, v interface{}) error {
@@ -192,13 +192,13 @@ func setJSON(w http.ResponseWriter, v interface{}) error {
 	return err
 }
 
-const TemplateDirectory = "templates"
+var templateDirectory string
 
 func setTemplates(w io.Writer, param interface{}, files ...string) error {
 
 	tmpls := make([]string, len(files))
 	for idx, file := range files {
-		tmpls[idx] = filepath.Join(TemplateDirectory, file)
+		tmpls[idx] = filepath.Join(templateDirectory, file)
 	}
 
 	tmpl := template.Must(template.ParseFiles(tmpls...))

@@ -1,1 +1,10 @@
-runtime: go112
+runtime: go111
+
+main: app/cmd
+
+handlers:
+- url: /admin/.*
+  login: admin
+  script: auto
+  redirect_http_response_code: 301
+

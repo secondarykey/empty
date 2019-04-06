@@ -1,28 +1,31 @@
 package handler
 
 import (
-	"net/http"
 	//"app/datastore"
+	//"fmt"
+	"net/http"
 )
 
-const PublicDirectory = "public"
+func Register(template, static string) {
 
-func Register() {
+	registerStaticHandler(static)
 
-	registerStaticHandler()
+	templateDirectory = template
 
-	publicRouter := NewRouter(Template)
-	publicRouter.Add("/", indexHandler)
-	http.Handle("/", publicRouter)
+	r := NewRouter(Template)
+	r.Add("/admin/", adminHandler)
+	r.Add("/", indexHandler)
+
+	http.Handle("/", r)
 
 	//apiRouter := NewRouter(JSON)
 	//apiRouter.Add("/api/", apiHandler)
 	//http.Handle("/api/", apiRouter)
 }
 
-func registerStaticHandler() {
+func registerStaticHandler(static string) {
 
-	pub := http.Dir(PublicDirectory)
+	pub := http.Dir(static)
 	s := http.FileServer(pub)
 
 	http.Handle("/js/", s)
@@ -33,9 +36,19 @@ func registerStaticHandler() {
 
 func indexHandler(p *Parameter) error {
 
-	if p.Req.URL.Path != "/" {
-		return fmt.Errorf("Bad Request")
-	}
+	//err := datastore.Put("test")
+	//if err != nil {
+	//return err
+	//}
+
+	//fmt.Fprint(p.Res, "Hello, Go112!")
+	//p.Direct = true
+	p.SetTemplate("index.tmpl")
+
+	return nil
+}
+
+func adminHandler(p *Parameter) error {
 
 	//err := datastore.Put("test")
 	//if err != nil {
