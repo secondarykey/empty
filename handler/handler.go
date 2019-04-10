@@ -13,10 +13,14 @@ func Register(template, static string) {
 	templateDirectory = template
 
 	r := NewRouter(Template)
-	r.Add("/admin/", adminHandler)
 	r.Add("/", indexHandler)
-
+	r.Add("/login", loginHandler)
+	r.Add("/callback", callbackHandler)
 	http.Handle("/", r)
+
+	ar := NewRouter(Template)
+	ar.Add("/admin/", adminHandler)
+	http.Handle("/admin/", ar)
 
 	//apiRouter := NewRouter(JSON)
 	//apiRouter.Add("/api/", apiHandler)
@@ -35,29 +39,29 @@ func registerStaticHandler(static string) {
 }
 
 func indexHandler(p *Parameter) error {
-
-	//err := datastore.Put("test")
-	//if err != nil {
-	//return err
-	//}
-
-	//fmt.Fprint(p.Res, "Hello, Go112!")
-	//p.Direct = true
 	p.SetTemplate("index.tmpl")
-
 	return nil
 }
 
 func adminHandler(p *Parameter) error {
-
-	//err := datastore.Put("test")
-	//if err != nil {
-	//return err
-	//}
-
-	//fmt.Fprint(p.Res, "Hello, Go112!")
-	//p.Direct = true
 	p.SetTemplate("admin/index.tmpl")
+	return nil
+}
 
+func loginHandler(p *Parameter) error {
+	err := redirectLogin(p.Res, p.Req, "/callback")
+	if err != nil {
+		return err
+	}
+	p.Direct = true
+	return nil
+}
+
+func callbackHandler(p *Parameter) error {
+	err := setToken(p.Res, p.Req)
+	if err != nil {
+		return err
+	}
+	p.SetTemplate("admin/index.tmpl")
 	return nil
 }

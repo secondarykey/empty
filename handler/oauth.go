@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+
+	"app/datastore"
 )
 
 var (
@@ -32,7 +34,15 @@ var (
 const OAuthCookieName = "OAuthState"
 
 //http.SetCookie(w,sc)
-func redirectLogin(w http.ResponseWriter, r *http.Request, uri string) {
+func redirectLogin(w http.ResponseWriter, r *http.Request, uri string) error {
+
+	fx, err := datastore.GetOAuthValue(r.Context())
+	if err != nil {
+		return err
+	}
+
+	conf.ClientID = fx.ClientID
+	conf.ClientSecret = fx.ClientSecret
 
 	state := uuid.NewV4().String()
 	sc := http.Cookie{
@@ -47,6 +57,7 @@ func redirectLogin(w http.ResponseWriter, r *http.Request, uri string) {
 	url := conf.AuthCodeURL(state)
 
 	http.Redirect(w, r, url, 302)
+	return nil
 }
 
 func setToken(w http.ResponseWriter, r *http.Request) error {
