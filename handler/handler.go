@@ -1,8 +1,6 @@
 package handler
 
 import (
-	//"app/datastore"
-	//"fmt"
 	"net/http"
 )
 
@@ -12,13 +10,13 @@ func Register(template, static string) {
 
 	templateDirectory = template
 
-	r := NewRouter(Template)
+	r := NewTemplateRouter(false)
 	r.Add("/", indexHandler)
 	r.Add("/login", loginHandler)
 	r.Add("/callback", callbackHandler)
 	http.Handle("/", r)
 
-	ar := NewRouter(Template)
+	ar := NewTemplateRouter(true)
 	ar.Add("/admin/", adminHandler)
 	http.Handle("/admin/", ar)
 
@@ -57,11 +55,23 @@ func loginHandler(p *Parameter) error {
 	return nil
 }
 
+const OAuthLoginCookieName = "OAuthLoggined"
+
 func callbackHandler(p *Parameter) error {
-	err := setToken(p.Res, p.Req)
+
+	err := authorization(p.Res, p.Req, "roles/owner")
 	if err != nil {
 		return err
 	}
-	p.SetTemplate("admin/index.tmpl")
+
+	sc := http.Cookie{
+		Name:   OAuthLoginCookieName,
+		Value:  "true",
+		MaxAge: 60 * 60 * 24,
+		Path:   "/admin/",
+	}
+	http.SetCookie(p.Res, &sc)
+
+	p.Redirect("/admin/", http.StatusFound)
 	return nil
 }

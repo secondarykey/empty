@@ -2,9 +2,5 @@ runtime: go111
 
 main: app/cmd
 
-handlers:
-- url: /admin/.*
-  login: admin
-  script: auto
-  redirect_http_response_code: 301
-
+env_variables:
+    DATASTORE_PROJECT_ID: 'my-project-id'

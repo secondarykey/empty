@@ -9,8 +9,6 @@ import (
 
 const fixingKey = "fixing"
 
-var ProjectId string
-
 type Entity struct {
 	Value string
 }
@@ -18,7 +16,7 @@ type Entity struct {
 func Put(v string) error {
 
 	ctx := context.Background()
-	dsClient, err := datastore.NewClient(ctx, ProjectId)
+	dsClient, err := datastore.NewClient(ctx, "")
 	if err != nil {
 		return err
 	}

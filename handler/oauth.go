@@ -1,29 +1,24 @@
 package handler
 
 import (
-	"github.com/satori/go.uuid"
-	"golang.org/x/oauth2"
-
-	//"google.golang.org/api/cloudresourcemanager/v1"
-	"google.golang.org/api/iam/v1"
-
-	//"cloud.google.com/go/iam/admin/apiv1"
-	//adminpb "google.golang.org/genproto/googleapis/iam/admin/v1"
-	//"google.golang.org/api/iterator"
-
-	//"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
+	"os"
 
 	"app/datastore"
+
+	"github.com/satori/go.uuid"
+	"golang.org/x/oauth2"
+	"golang.org/x/xerrors"
+	"google.golang.org/api/cloudresourcemanager/v1"
+	profile "google.golang.org/api/oauth2/v2"
 )
 
 var (
 	conf = oauth2.Config{
 		ClientID:     "",
 		ClientSecret: "",
-		Scopes:       []string{"openid", "email", "profile", iam.CloudPlatformScope},
+		Scopes:       []string{profile.UserinfoEmailScope, cloudresourcemanager.CloudPlatformScope},
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  "https://accounts.google.com/o/oauth2/v2/auth",
 			TokenURL: "https://www.googleapis.com/oauth2/v4/token",
@@ -38,7 +33,7 @@ func redirectLogin(w http.ResponseWriter, r *http.Request, uri string) error {
 
 	fx, err := datastore.GetOAuthValue(r.Context())
 	if err != nil {
-		return err
+		return xerrors.Errorf("error GetOAuthValue(): %w", err)
 	}
 
 	conf.ClientID = fx.ClientID
@@ -48,93 +43,78 @@ func redirectLogin(w http.ResponseWriter, r *http.Request, uri string) error {
 	sc := http.Cookie{
 		Name:   OAuthCookieName,
 		Value:  state,
-		MaxAge: 60,
+		MaxAge: 120,
 		Path:   "/",
 	}
 	http.SetCookie(w, &sc)
 
-	conf.RedirectURL = fmt.Sprintf("https://%s%s", "chic-shizuoka.appspot.com", uri)
+	host := r.URL.Host
+	host = "chic-shizuoka.appspot.com"
+	conf.RedirectURL = fmt.Sprintf("https://%s%s", host, uri)
 	url := conf.AuthCodeURL(state)
 
 	http.Redirect(w, r, url, 302)
 	return nil
 }
 
-func setToken(w http.ResponseWriter, r *http.Request) error {
+func authorization(w http.ResponseWriter, r *http.Request, roles ...string) error {
 
 	sc, err := r.Cookie(OAuthCookieName)
 	if err != nil {
-		return err
+		return xerrors.Errorf("error Cookie(): %w", err)
 	}
 
 	if sc.Value != r.FormValue("state") {
-		return fmt.Errorf("Cookie State Value Error")
+		return xerrors.Errorf("error Cookie State value.")
 	}
 
 	code := r.FormValue("code")
 	ctx := r.Context()
 	tok, err := conf.Exchange(ctx, code)
 	if !tok.Valid() {
-		return fmt.Errorf("Token Valid Error")
+		return xerrors.Errorf("error Token Valid.")
 	}
-	/*
-		client := conf.Client(ctx, tok)
-		cloudresourcemanagerService, err := cloudresourcemanager.New(client)
-		if err != nil {
-			log.Println("New:", err)
-			return err
-		}
-	*/
 
-	service, _ := iam.New(conf.Client(ctx, tok))
-	resource := "projects/*/serviceAccounts/*"
-	resp, err := service.Projects.ServiceAccounts.GetIamPolicy(resource).Do()
+	if roles == nil {
+		//log.Println("roles target nil equals google acount.")
+		return nil
+	}
+
+	client := conf.Client(ctx, tok)
+	accountService, err := profile.New(client)
 	if err != nil {
-		log.Println("GetIamPolicy:", err)
-		return err
+		return xerrors.Errorf("error New(OAuth API).: %w", err)
+	}
+
+	info, err := accountService.Tokeninfo().Do()
+	if err != nil {
+		return xerrors.Errorf("error Tokeninfo(OAuth API).: %w", err)
+	}
+
+	mail := info.Email
+	cloudresourcemanagerService, err := cloudresourcemanager.New(client)
+	if err != nil {
+		return xerrors.Errorf("error New(CloudResourceManager API).: %w", err)
+	}
+
+	resource := os.Getenv("DATASTORE_PROJECT_ID")
+	rb := &cloudresourcemanager.GetIamPolicyRequest{}
+	resp, err := cloudresourcemanagerService.Projects.GetIamPolicy(resource, rb).Context(ctx).Do()
+	if err != nil {
+		return xerrors.Errorf("error GetIamPolicy(CloudResourceManager API).: %w", err)
 	}
 
 	for _, bind := range resp.Bindings {
-		log.Println("Role: " + bind.Role)
-		log.Println("Member: ")
-		for _, mem := range bind.Members {
-			log.Println(mem)
+		for _, role := range roles {
+			if bind.Role == role {
+				for _, mem := range bind.Members {
+					if mem == "user:"+mail {
+						return nil
+					}
+				}
+			}
 		}
 	}
 
-	/*
-		rb := &cloudresourcemanager.GetIamPolicyRequest{}
-		resp, err := cloudresourcemanagerService.Projects.GetIamPolicy(resource, rb).Context(ctx).Do()
-		if err != nil {
-			log.Println("GetIamPolicy:", err)
-			return err
-		}
-
-	*/
-
-	/*
-		log.Println("IamClient")
-		c, err := admin.NewIamClient(ctx)
-		if err != nil {
-			return err
-		}
-
-		req := adminpb.ListRolesRequest{
-			Parent: "projects/chic-shizuoka",
-		}
-
-		log.Println("ListRoles")
-		it := c.ListRoles(ctx, &req)
-		for {
-			resp, err := it.Next()
-			if err == iterator.Done {
-				break
-			}
-			if err != nil {
-				return err
-			}
-			fmt.Println(resp)
-		}
-	*/
-	return nil
+	return xerrors.Errorf("error not found roles")
 }
