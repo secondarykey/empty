@@ -7,16 +7,16 @@ import (
 	"cloud.google.com/go/datastore"
 )
 
-var ProjectId string
+const fixingKey = "fixing"
 
 type Entity struct {
 	Value string
 }
 
 func Put(v string) error {
-	ctx := context.Background()
 
-	dsClient, err := datastore.NewClient(ctx, ProjectId)
+	ctx := context.Background()
+	dsClient, err := datastore.NewClient(ctx, "")
 	if err != nil {
 		return err
 	}

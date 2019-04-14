@@ -9,10 +9,13 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/xerrors"
 )
 
 type Router struct {
 	behavior Behavior
+	login    bool
 	pattern  map[string]Handler
 	keyMap   map[string][]string
 }
@@ -25,9 +28,24 @@ const (
 	JSON
 )
 
-func NewRouter(b Behavior) Router {
+func NewRouter(b Behavior, login bool) Router {
 	r := Router{}
 	r.behavior = b
+	r.login = login
+	return r
+}
+
+func NewTemplateRouter(login bool) Router {
+	r := Router{}
+	r.login = login
+	r.behavior = Template
+	return r
+}
+
+func NewJSONRouter(login bool) Router {
+	r := Router{}
+	r.login = login
+	r.behavior = JSON
 	return r
 }
 
@@ -63,7 +81,6 @@ func (router *Router) getHandler(p *Parameter) (Handler, error) {
 	}
 
 	slc := strings.Split(path, "/")
-
 	for key, elm := range router.keyMap {
 		if len(elm) != len(slc) {
 			continue
@@ -96,47 +113,58 @@ func (router *Router) getHandler(p *Parameter) (Handler, error) {
 		}
 	}
 
-	return h, fmt.Errorf("URL Pattern Not Found[%s]", path)
+	return h, xerrors.Errorf("URL Pattern Not Found[%s]", path)
 }
 
 func (router Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	p := NewParameter(w, r)
+
+	if router.login {
+		sc, err := r.Cookie(OAuthLoginCookieName)
+		if err != nil {
+			p.Redirect("/login", http.StatusMovedPermanently)
+			return
+		} else {
+			if sc.Value != "true" {
+				setError(p, http.StatusUnauthorized, xerrors.Errorf("Login cookie error"))
+				return
+			}
+		}
+	}
+
 	if router.behavior == Direct {
 		p.Direct = true
 	}
 
 	handler, err := router.getHandler(p)
 	if err != nil {
-		log.Println(err)
-		w.WriteHeader(http.StatusNotFound)
+		setError(p, http.StatusNotFound, err)
 		return
 	}
 
 	err = handler(p)
 	if err != nil {
-		log.Println(err)
-		//error handring
+		setError(p, http.StatusInternalServerError, err)
 		return
 	}
 
 	if !p.Direct {
 		if router.behavior == Template {
 			if p.templates == nil || len(p.templates) == 0 {
-				err = fmt.Errorf("Behavior->Template but templates not setting")
+				err = xerrors.Errorf("error Behavior->Template but templates not setting")
 			} else {
 				err = setTemplates(w, p.output, p.templates...)
 			}
 		} else if router.behavior == JSON {
 			err = setJSON(w, p.output)
 		} else {
-			err = fmt.Errorf("Behavior Error")
+			err = xerrors.Errorf("error Behavior")
 		}
 	}
 
 	if err != nil {
-		log.Println(err)
-		//error handling
+		setError(p, http.StatusInternalServerError, err)
 		return
 	}
 }
@@ -166,6 +194,11 @@ func NewParameter(w http.ResponseWriter, r *http.Request) *Parameter {
 
 func (p *Parameter) SetTemplate(tmpls ...string) {
 	p.templates = tmpls
+}
+
+func (p *Parameter) Redirect(path string, status int) {
+	p.Direct = true
+	http.Redirect(p.Res, p.Req, path, status)
 }
 
 func (p *Parameter) Set(key string, v interface{}) {
@@ -203,4 +236,21 @@ func setTemplates(w io.Writer, param interface{}, files ...string) error {
 
 	tmpl := template.Must(template.ParseFiles(tmpls...))
 	return tmpl.Execute(w, param)
+}
+
+func setError(p *Parameter, status int, err error) {
+
+	buf := fmt.Sprintf("%+v", err)
+	log.Printf("%s\n", buf)
+
+	p.Res.WriteHeader(status)
+
+	dto := struct {
+		Status      int
+		Title       string
+		Description string
+	}{status, http.StatusText(status), buf}
+
+	p.Set("Error", dto)
+	setTemplates(p.Res, p.output, "error.tmpl")
 }
