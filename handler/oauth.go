@@ -49,7 +49,7 @@ func redirectLogin(w http.ResponseWriter, r *http.Request, uri string) error {
 	http.SetCookie(w, &sc)
 
 	host := r.URL.Host
-	host = "chic-shizuoka.appspot.com"
+	//host = "chic-shizuoka.appspot.com"
 	conf.RedirectURL = fmt.Sprintf("https://%s%s", host, uri)
 	url := conf.AuthCodeURL(state)
 

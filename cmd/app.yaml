@@ -3,4 +3,4 @@ runtime: go111
 main: app/cmd
 
 env_variables:
-    DATASTORE_PROJECT_ID: 'my-project-id'
+    DATASTORE_PROJECT_ID: 'empty'
